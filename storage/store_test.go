@@ -89,6 +89,7 @@ func newStore(db *sql.DB, logger mocks.SpyLogger) Store {
 			0,
 		),
 		reader: clickhousespanstore.NewTraceReader(
+			logger,
 			db,
 			testOperationsTable,
 			testIndexTable,
@@ -106,6 +107,7 @@ func newStore(db *sql.DB, logger mocks.SpyLogger) Store {
 			0,
 		),
 		archiveReader: clickhousespanstore.NewTraceReader(
+			logger,
 			db,
 			testOperationsTable,
 			testIndexTable,

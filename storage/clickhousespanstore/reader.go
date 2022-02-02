@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/hashicorp/go-hclog"
+
 	"github.com/gogo/protobuf/proto"
 	"github.com/opentracing/opentracing-go"
 
@@ -35,18 +37,20 @@ type TraceReader struct {
 	indexTable      TableName
 	spansTable      TableName
 	maxNumSpans     uint
+	logger          hclog.Logger
 }
 
 var _ spanstore.Reader = (*TraceReader)(nil)
 
 // NewTraceReader returns a TraceReader for the database
-func NewTraceReader(db *sql.DB, operationsTable, indexTable, spansTable TableName, maxNumSpans uint) *TraceReader {
+func NewTraceReader(logger hclog.Logger, db *sql.DB, operationsTable, indexTable, spansTable TableName, maxNumSpans uint) *TraceReader {
 	return &TraceReader{
 		db:              db,
 		operationsTable: operationsTable,
 		indexTable:      indexTable,
 		spansTable:      spansTable,
 		maxNumSpans:     maxNumSpans,
+		logger:          logger,
 	}
 }
 
@@ -233,11 +237,19 @@ func (r *TraceReader) GetOperations(
 
 // FindTraces retrieves traces that match the traceQuery
 func (r *TraceReader) FindTraces(ctx context.Context, query *spanstore.TraceQueryParameters) ([]*model.Trace, error) {
+    defer func() {
+        if err := recover(); err != nil {
+            r.logger.Error("FindTraces panic occurred:", err)
+        }
+    }()
+
+	r.logger.Error("Start FindTraces")
 	span, ctx := opentracing.StartSpanFromContext(ctx, "FindTraces")
 	defer span.Finish()
 
 	traceIDs, err := r.FindTraceIDs(ctx, query)
 	if err != nil {
+		r.logger.Error("Error in FindTraces after FindTraceIDs", err)
 		return nil, err
 	}
 
@@ -246,6 +258,13 @@ func (r *TraceReader) FindTraces(ctx context.Context, query *spanstore.TraceQuer
 
 // FindTraceIDs retrieves only the TraceIDs that match the traceQuery, but not the trace data
 func (r *TraceReader) FindTraceIDs(ctx context.Context, params *spanstore.TraceQueryParameters) ([]model.TraceID, error) {
+    defer func() {
+        if err := recover(); err != nil {
+            r.logger.Error("FindTraceIDs panic occurred:", err)
+        }
+    }()
+
+	r.logger.Error("START FindTraceIDs")
 	span, ctx := opentracing.StartSpanFromContext(ctx, "FindTraceIDs")
 	defer span.Finish()
 
@@ -260,6 +279,7 @@ func (r *TraceReader) FindTraceIDs(ctx context.Context, params *spanstore.TraceQ
 
 	fullTimeSpan := end.Sub(params.StartTimeMin)
 
+	r.logger.Error("BEFORE findTraceIDsInRange")
 	if fullTimeSpan < minTimespanForProgressiveSearch+minTimespanForProgressiveSearchMargin {
 		return r.findTraceIDsInRange(ctx, params, params.StartTimeMin, end, nil)
 	}
@@ -275,6 +295,7 @@ func (r *TraceReader) FindTraceIDs(ctx context.Context, params *spanstore.TraceQ
 
 	found := make([]model.TraceID, 0)
 
+	r.logger.Error("BEFORE maxProgressiveSteps cycle")
 	for step := 0; step < maxProgressiveSteps; step++ {
 		if len(found) >= params.NumTraces {
 			break
@@ -304,11 +325,19 @@ func (r *TraceReader) FindTraceIDs(ctx context.Context, params *spanstore.TraceQ
 		end = start
 		timeSpan *= 2
 	}
+	r.logger.Error("AFTER maxProgressiveSteps cycle")
 
 	return found, nil
 }
 
 func (r *TraceReader) findTraceIDsInRange(ctx context.Context, params *spanstore.TraceQueryParameters, start, end time.Time, skip []model.TraceID) ([]model.TraceID, error) {
+    defer func() {
+        if err := recover(); err != nil {
+            r.logger.Error("findTraceIDsInRange panic occurred:", err)
+        }
+    }()
+
+	r.logger.Error("START findTraceIDsInRange")
 	span, ctx := opentracing.StartSpanFromContext(ctx, "findTraceIDsInRange")
 	defer span.Finish()
 
@@ -366,6 +395,7 @@ func (r *TraceReader) findTraceIDsInRange(ctx context.Context, params *spanstore
 	span.SetTag("db.statement", query)
 	span.SetTag("db.args", args)
 
+	r.logger.Error("BEFORE getStrings")
 	traceIDStrings, err := r.getStrings(ctx, query, args...)
 	if err != nil {
 		return nil, err
