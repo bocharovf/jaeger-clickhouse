@@ -64,24 +64,29 @@ func (r *TraceReader) getTraces(ctx context.Context, traceIDs []model.TraceID) (
 	span, _ := opentracing.StartSpanFromContext(ctx, "getTraces")
 	defer span.Finish()
 
-	values := make([]interface{}, len(traceIDs))
+	args := make([]interface{}, len(traceIDs))
 	for i, traceID := range traceIDs {
-		values[i] = traceID.String()
+		args[i] = traceID.String()
 	}
 
-	// It's more efficient to do PREWHERE on traceID to the only read needed models:
-	// * https://clickhouse.tech/docs/en/sql-reference/statements/select/prewhere/
-	//nolint:gosec  , G201: SQL string formatting
-	query := fmt.Sprintf("SELECT model FROM %s PREWHERE traceID IN (%s)", r.spansTable, "?"+strings.Repeat(",?", len(values)-1))
+	queries := make([]string, len(traceIDs))
 
-	if r.maxNumSpans > 0 {
-		query += fmt.Sprintf(" ORDER BY timestamp LIMIT %d BY traceID", r.maxNumSpans)
+	for i := range args {
+		// It's more efficient to do PREWHERE on traceID to the only read needed models:
+		// * https://clickhouse.tech/docs/en/sql-reference/statements/select/prewhere/
+		//nolint:gosec  , G201: SQL string formatting
+		queries[i] = fmt.Sprintf("SELECT model FROM %s PREWHERE traceID = ?", r.spansTable)
+		if r.maxNumSpans > 0 {
+			queries[i] += fmt.Sprintf(" ORDER BY timestamp LIMIT %d", r.maxNumSpans)
+		}
 	}
+
+	query := strings.Join(queries, " UNION ALL ")
 
 	span.SetTag("db.statement", query)
-	span.SetTag("db.args", values)
+	span.SetTag("db.args", args)
 
-	rows, err := r.db.QueryContext(ctx, query, values...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -237,11 +242,11 @@ func (r *TraceReader) GetOperations(
 
 // FindTraces retrieves traces that match the traceQuery
 func (r *TraceReader) FindTraces(ctx context.Context, query *spanstore.TraceQueryParameters) ([]*model.Trace, error) {
-    defer func() {
-        if err := recover(); err != nil {
-            r.logger.Error("FindTraces panic occurred:", err)
-        }
-    }()
+	defer func() {
+		if err := recover(); err != nil {
+			r.logger.Error("FindTraces panic occurred:", err)
+		}
+	}()
 
 	r.logger.Error("Start FindTraces")
 	span, ctx := opentracing.StartSpanFromContext(ctx, "FindTraces")
@@ -258,11 +263,11 @@ func (r *TraceReader) FindTraces(ctx context.Context, query *spanstore.TraceQuer
 
 // FindTraceIDs retrieves only the TraceIDs that match the traceQuery, but not the trace data
 func (r *TraceReader) FindTraceIDs(ctx context.Context, params *spanstore.TraceQueryParameters) ([]model.TraceID, error) {
-    defer func() {
-        if err := recover(); err != nil {
-            r.logger.Error("FindTraceIDs panic occurred:", err)
-        }
-    }()
+	defer func() {
+		if err := recover(); err != nil {
+			r.logger.Error("FindTraceIDs panic occurred:", err)
+		}
+	}()
 
 	r.logger.Error("START FindTraceIDs")
 	span, ctx := opentracing.StartSpanFromContext(ctx, "FindTraceIDs")
@@ -331,11 +336,11 @@ func (r *TraceReader) FindTraceIDs(ctx context.Context, params *spanstore.TraceQ
 }
 
 func (r *TraceReader) findTraceIDsInRange(ctx context.Context, params *spanstore.TraceQueryParameters, start, end time.Time, skip []model.TraceID) ([]model.TraceID, error) {
-    defer func() {
-        if err := recover(); err != nil {
-            r.logger.Error("findTraceIDsInRange panic occurred:", err)
-        }
-    }()
+	defer func() {
+		if err := recover(); err != nil {
+			r.logger.Error("findTraceIDsInRange panic occurred:", err)
+		}
+	}()
 
 	r.logger.Error("START findTraceIDsInRange")
 	span, ctx := opentracing.StartSpanFromContext(ctx, "findTraceIDsInRange")
